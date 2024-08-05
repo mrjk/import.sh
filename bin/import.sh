@@ -18,13 +18,20 @@
 # bash: ( env -i bash --norc -o posix -c set ) | less
 # sh: ( env -i sh --norc -c -- set )
 
+export SHLIB_SHELL_OPTS=$(set +o | grep 'pipefail\|xtrace\|errexit')
 set -euo pipefail
 #export	LC_COLLATE=C
+
+
 
 # Source: https://stackoverflow.com/a/45828988
 # or use system realpath !!!
 # Use like this: realpath "${BASH_SOURCE[0]}"
-
+# Usage:
+#  realpath [<PATH>]
+# Example:
+#  realpath ../bin/file
+#  realpath
 realpath()
 ( 
   set -o errexit -o nounset
@@ -55,11 +62,18 @@ realpath()
 )
 
 
+# Add a a <PATH> to <PATHS_VAR>
+# Usage:
+#  _importsh__path_add <PATHS_VAR> <PATH>
+# Example:
+#  _importsh__path_add PATH $PWD/app/bin
 _importsh__path_add() {
   local var=$1
   local path=$2
-  
-  if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+
+  # if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+  if [[ ":${!var}:" != *":$path:"* ]]; then
+    >&2 echo "DEBUG: Add path '$var': $path"
       export "${var}=$path${!var:+":${!var}"}"
   fi
 }
@@ -74,168 +88,345 @@ _importsh__init()
   local d=${1-} # ${1:-$(ps -o args= $$)}
   
   local path=$(realpath "$0")
-  local s="${path%/*}${d:+/$d}"
-  
-  local dl_path="/tmp"
-  if [[ -d "$HOME/.local" ]]; then
-    export dl_path="$HOME/.local/share/import.sh/lib"
-  fi
-  export SHLIB_PATH_SHARED=${SHLIB_PATH_SHARED:-$HOME/.local/share/import.sh/lib}
-  export SHLIB_PATH_DOWNLOADS=${SHLIB_PATH_DOWNLOADS:-$HOME/.local/share/import.sh/downloads}
+  local root="${path%/*}${d:+/$d}"
 
-  export SHLIB_PATH="${SHLIB_PATH_SHARED}:${SHLIB_PATH_DOWNLOADS}"
-  _importsh__path_add SHLIB_PATH "$s"
-  _importsh__path_add SHLIB_PATH "$s/bin"
-  _importsh__path_add SHLIB_PATH "$s/lib"
-  _importsh__path_add SHLIB_PATH "$s/libexec"
-
+  export SHLIB_LVL=${SHLIB_LVL:-0}${SHLIB_LVL:+$(( $SHLIB_LVL + 1 ))}
   export SHLIB_PATH_NEEDLE=$(cksum <<< "$path" | cut -f 1 -d ' ')
 
-  _importsh__register "$path"
+  local dl_path="/tmp"
+  if [[ -d "$HOME/.local" ]]; then
+    export dl_path="$HOME/.local/share/import.sh/downloads"
+  fi
+  export SHLIB_DIR_SHARED=${SHLIB_DIR_SHARED:-$HOME/.local/share/import.sh}
+  export SHLIB_DIR_DOWNLOADS=${SHLIB_DIR_DOWNLOADS:-$dl_path}
+
+  export SHLIB_LIB_PATH="${SHLIB_DIR_SHARED}/lib:${SHLIB_DIR_DOWNLOADS}/lib"
+  export SHLIB_FILE_PATH="${SHLIB_DIR_SHARED}/lib:${SHLIB_DIR_DOWNLOADS}/lib"
+  export PATH
+  export SHLIB_FILE_MAP=
+  # _importsh__path_add SHLIB_LIB_PATH "$root"
+  # _importsh__path_add SHLIB_LIB_PATH "$root/bin"
+  # _importsh__path_add SHLIB_LIB_PATH "$root/libexec"
+  _importsh__path_add SHLIB_LIB_PATH "$root/lib"
+  _importsh__path_add SHLIB_FILE_PATH "$root/files"
+
+  _importsh__path_add PATH "$SHLIB_DIR_SHARED/bin"
+
+  _importsh__register_lib "$path"
 }
 
-_importsh__command ()
-{
-  local target=$1
-  local path2=
 
-  local paths=$(/usr/bin/tr ':' '\n' <<< "${SHLIB_PATH}")
-  while  read  path2 ; do
-    file="$path2/$target"
-    # >&2 printf "%s\n" "DEBUG: Searching: $file"
+# Find first matching file called <NAME> in list of <PATHS_VAR>
+# Usage:
+#  _importsh__find_in_paths <PATHS_VAR> <NAME>
+_importsh__find_in_paths ()
+{
+  local var_name=$1
+  local target=$2
+  local path=
+
+  local paths=$(/usr/bin/tr ':' '\n' <<< "${!var_name}")
+  while  read  path ; do
+    file="$path/$target"
     if [[ -f "$file" ]]; then
       >&2 printf "%s\n" "DEBUG: Found: $file"
       printf "%s\n" "$file"
       return 0
     fi
   done <<<"$paths"
-  >&2 printf "%s\n" "DEBUG: Could not find file '$file' in "${SHLIB_PATH//:/ }""
+  >&2 printf "%s\n" "DEBUG: Could not find file '$file' in "${!var_name}""
   return 1
 }
 
 
+# Download an <URL> into <PATH>
+# Usage:
+#  download_file <URL> <PATH>
 download_file() {
-    local url=$1
-    local filename=$2
+  local url=$1
+  local filename=$2
 
-    # if [ -z "$url" ] || [ -z "$filename" ]; then
-    #     echo "Usage: download_file <URL> <FILENAME>"
-    #     return 1
-    # fi
+  # if [ -z "$url" ] || [ -z "$filename" ]; then
+  #     echo "Usage: download_file <URL> <FILENAME>"
+  #     return 1
+  # fi
 
-    if command -v curl > /dev/null; then
-        curl -o "$filename" "$url"
-    elif command -v wget > /dev/null; then
-        wget -O "$filename" "$url"
-    else
-        echo "Neither curl nor wget is installed. Please install one of them to use this function."
-        return 1
-    fi
+  # Create destination dir
+  local parent="${filename%/*}"
+  [[ -d "${parent}" ]] || mkdir -p "${parent}"
 
-    if [ $? -eq 0 ]; then
-        echo "File downloaded successfully as $filename"
-    else
-        echo "Failed to download the file."
-        return 1
-    fi
+  # Find download tool
+  if command -v curl > /dev/null; then
+      curl -s -o "$filename" "$url"
+  elif command -v wget > /dev/null; then
+      wget -O "$filename" "$url"
+  else
+      echo "Neither curl nor wget is installed. Please install one of them to use this function."
+      return 1
+  fi
+
+  # Report
+  if [ $? -eq 0 ]; then
+      echo "File downloaded successfully as $filename"
+  else
+      echo "Failed to download the file."
+      return 1
+  fi
 }
 
+# Source a shell file
 _importsh__source_file ()
 {
   local path=$1
   shift 1 || true
   local rc=
 
-  set +eu
-  PWD="${path%/*}" . "$path" $@ || \
-    {
-      rc=$?
-      >&2 printf "Failed to load lib returned $rc: %s\n" "$p"
-    }
-  set -eu
-  return $rc
+  if [[ "$kind" == 'lib' ]]; then
+    set +eu
+    PWD="${path%/*}" . "$path" $@ || \
+      {
+        rc=$?
+        >&2 printf "Failed to load lib returned $rc: %s\n" "$p"
+      }
+    set -eu
+    return $rc
+  fi
+
+
 }
+
+
+# import2()
+# {
+#   local command=$1
+#   shift 1
+#   echo
+#   echo "FROM: $@"
+
+#   # Parse args
+#   local target=
+#   local source_url=
+#   if [[ $# -eq 2 ]]; then
+#     target=$1
+#     source_url=$2
+#     shift 2
+#   elif [[ $# -eq 1 ]]; then
+
+#     case "$1" in
+#       http://*) 
+#         source_url=$1 ;;
+#       https://*)
+#         source_url=$1 ;;
+#       *)
+#         target=$1 ;;
+#     esac
+#     [[ -n "$target" ]] || target=${source_url##*/}
+#     shift 1
+#   else
+#     >&2 printf "Bad command usage\n"
+#     return 1
+#   fi
+
+#   echo target=$target
+#   echo source_url=$source_url
+# }
 
 
 # This all the thing you need to source
 # other libs.
+# Usage:
+#  import <TYPE> <NAME>
+# Example:
+#  import lib my_lib.sh
+#  import lib lib/my_lib.sh
+#  import lib https://raw.githubusercontent.com/qzb/is.sh/v1.1.2/is.sh
+#  import bin https://raw.githubusercontent.com/qzb/is.sh/v1.1.2/is.sh
+#  import file https://raw.githubusercontent.com/mrjk/clish/main/README.md
 import()
 {
   # set -x
-  local target=$1
-  shift
+  local cmd=$1
+  shift 1
 
-  # Detect type
-  local is_path=false
-  local is_url=false
-  case "$target" in
-    http://*) is_url=true ;;
-    https://*) is_url=true ;;
-    *) is_path=true ;;
+  # Dispatch commands
+  case "$cmd" in
+    get)
+      _importsh__query_api $@
+      return ;;
+    *)
+      kind=$cmd ;;
   esac
 
+  # Parse args
+  local target=
+  local source_url=
+  if [[ $# -eq 2 ]]; then
+    target=$1
+    source_url=$2
+    shift 2
+  elif [[ $# -eq 1 ]]; then
 
-  if $is_path; then
-    local path=$(PATH="$SHLIB_PATH" _importsh__command "$target" || true )
+    # Smart argument detection
+    case "$1" in
+      http://*) 
+        source_url=$1 ;;
+      https://*)
+        source_url=$1 ;;
+      *)
+        target=$1 ;;
+    esac
+    [[ -n "$target" ]] || target=${source_url##*/}
+    shift 1
+  else
+    >&2 printf "Bad command usage\n"
+    return 1
+  fi
 
-    if [ -f "$path" ] ; then
-      if _importsh__register "$path"; then
-        _importsh__source_file "$path"
-        # PWD="${path%/*}" . "$path" $@ || {
-        #   local rc=$?
-        #   >&2 printf "Failed to load lib returned $rc: %s\n" "$p"
-        #   return $rc; }
-        return
+  echo DEBUG: target=$target
+  echo DEBUG: source_url=$source_url
+
+  _importsh__import_api "$kind" "$target" "$source_url"
+}
+
+_importsh__import_api ()
+{
+  local kind=$1
+  local target=$2
+  local source_url=${3-}
+
+  # Detect kind
+  local path_suffix=
+  local kind_var=
+  case "$kind" in
+    bin)
+      kind_var=PATH
+      path_suffix="bin" ;;
+    lib) 
+      kind_var=SHLIB_LIB_PATH
+      path_suffix="lib" ;;
+    file)
+      kind_var=SHLIB_FILE_PATH
+      path_suffix="files" ;;
+    
+    *) 
+      >&2 printf "Import.sh does not support kind '%s', please use one of: %s\n" "$kind" "bin, lib or file"
+      return 8
+    ;;
+  esac
+  local dl_path="$SHLIB_DIR_DOWNLOADS/$SHLIB_PATH_NEEDLE/$path_suffix"
+
+  # Update lookup paths
+  if [[ -n "$kind_var" ]]; then
+    _importsh__path_add $kind_var "$dl_path"
+  fi
+
+  # Process URL
+  if [[ -n "$source_url" ]]; then
+    local dest="$dl_path/$target"
+
+    # Fetch and install target
+    if [[ ! -f "$dest" ]]; then
+      download_file "$source_url" "$dest"
+      if [[ "$kind" == 'bin' ]]; then
+        chmod +x "$dest"
       fi
     fi
   fi
 
-  if $is_url; then
-    local file="${target##*/}"
-    local path="$SHLIB_PATH_DOWNLOADS/$SHLIB_PATH_NEEDLE"
-    local dest="$path/$file"
+  # Expose vars
+  local var_name=
 
-    if [[ ! -f "$dest" ]]; then
-      [[ -d "$path" ]] || mkdir -p "$path"
-      download_file "$target" "$dest"
+  # Process path
+  if [[ -n "$target" ]]; then
+    local full_path=
+
+    if [[ "$kind" == "lib" ]]; then
+      full_path=$(_importsh__find_in_paths SHLIB_LIB_PATH "$target" || true )
+      if [ -f "$full_path" ] ; then
+        if _importsh__register_lib "$full_path"; then
+          _importsh__source_file "$full_path"
+          # return
+        fi
+      fi
+    else
+      full_path=$(_importsh__find_in_paths "$kind_var" "$target" || true )
+
     fi
 
-    _importsh__source_file "$dest"
+    set +x
+    _importsh__register_file "$target" "$full_path"
     return
-  fi  
+  fi
 
   set +x
-  >&2 printf "No candidates found '%s' in: %s\n" "$target" "${SHLIB_PATH//:/ }"
+  >&2 printf "No candidates found '%s' in: %s\n" "$target" "${SHLIB_LIB_PATH//:/ }"
   return 4
 }
 
-
-_importsh__register()
+# Register name and path in local DB
+_importsh__register_file ()
 {
-  local f d n p=$1
-  f=${p##*/}
-  d=${p%/*}
+  local name=$1
+  local path=$2
+
+  echo "REGISTER==== $1 $2"
+
+  _importsh__path_add SHLIB_FILE_MAP "$name=$path"
+
+}
+
+# Retrieve path from name
+_importsh__query_api ()
+{
+  
+  local name=$1
+  # echo $SHLIB_FILE_MAP
+  local match=$(grep -o ":$name=[^:]*:" <<< ":$SHLIB_FILE_MAP:")
+
+  if [[ -z "$match" ]]; then
+    >&2 printf "No candidates found for '%s'\n" "$name"
+    return 1
+  fi
+  match=${match#*=}
+  match="${match::${#match}-1}"
+
+  # echo "$match"
+  printf "%s\n" "$match"
+
+  # echo "REGISTER==== $1 $2"
+
+  # _importsh__path_add SHLIB_FILE_MAP "$name=$path"
+
+}
+
+
+_importsh__register_lib()
+{
+  local path=$1
+  local file dir
+  file=${path##*/}
+  dir=${path%/*}
   
   # Do initial load
   if [[ -z "${SHLIB-}" ]]; then
-    SHSRC=$p
-    SHSRC_FILE=$f
-    SHSRC_DIR=$d
+    SHSRC=$path
+    SHSRC_FILE=$file
+    SHSRC_DIR=$dir
   fi
   
   # Check if lib is not already loaded
-  [[ ":${SHLIB-}:" != *:$f:* ]] || {
-    >&2 printf "Library already loaded: %s\n" "$f"
+  [[ ":${SHLIB-}:" != *:$file:* ]] || {
+    >&2 printf "Library already loaded: %s\n" "$file"
     return 3
   }
   
   # Add module into SHLIB
-  SHLIB="${SHLIB:+$SHLIB:}$f"
+  SHLIB="${SHLIB:+$SHLIB:}$file"
  
   # Importing vars
-  IMPORT_PATH=$p
-  IMPORT_FILE=$f
-  IMPORT_DIR=$d
+  IMPORT_PATH=$path
+  IMPORT_FILE=$file
+  IMPORT_DIR=$dir
 }
 
 # Ignitiate a default instance
@@ -249,10 +440,63 @@ set +x
 
 # # set  -x
 
-# # _importsh__path_add SHLIB_PATH tutu
+# # _importsh__path_add SHLIB_LIB_PATH tutu
 
-# echo YOOO $SHLIB_PATH
-# _importsh__path_add SHLIB_PATH tata
-# _importsh__path_add SHLIB_PATH tutu
-# echo YOOO $SHLIB_PATH
+# echo YOOO $SHLIB_LIB_PATH
+# _importsh__path_add SHLIB_LIB_PATH tata
+# _importsh__path_add SHLIB_LIB_PATH tutu
+# echo YOOO $SHLIB_LIB_PATH
 # set +x
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  # ###################  V1
+
+  # local source_url=
+  # if [[ $# -eq 2 ]]; then
+  #   local target=$1
+  #   local source_url=$2
+  #   shift 2
+  # elif [[ $# -eq 1 ]]; then
+  #   local target=$1
+  #   shift 1
+  # else
+  #   >&2 printf "Bad command usage\n"
+  #   return 1
+  # fi
+  # # shift 2
+
+  # # Prepare vars
+  # local filename="${target##*/}"
+
+  # # Detect local or remote
+  # local is_path=false
+  # local is_url=false
+  # if [[ -z "$source_url" ]]; then
+  #   case "$target" in
+  #     http://*) is_url=true ;source_url=$target ;;
+  #     https://*) is_url=true ;source_url=$target ;;
+  #     *) is_path=true ;;
+  #   esac
+  # fi
+
+  # ###################  V1 EOF
+
