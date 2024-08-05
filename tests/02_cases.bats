@@ -18,6 +18,7 @@ setup() {
 
     local issh_version=1.1.0
     import bin https://raw.githubusercontent.com/qzb/is.sh/v$issh_version/is.sh
+
     local out=$(import get is.sh)
     [[ -f "$out" ]]
     grep "https://github.com/qzb/is.sh" "$out"
@@ -58,10 +59,10 @@ setup() {
     local out=$(import get argsparse.sh)
     [[ -f "$out" ]]
     grep "@version $bash_argparse_version" "$out"
-    echo IMPORTED "$out"
+    # echo IMPORTED "$out"
 
     # Test lib
-    set +u
+    # set +u
     argsparse_use_option option1 "An option."
 }
 

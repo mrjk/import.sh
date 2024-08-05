@@ -49,10 +49,10 @@ main() {
 
     main
     export PATH_LIST="val1:val2:val3"
-    _importsh__path_add PATH_LIST tmp/
-    _importsh__path_add PATH_LIST tmp/
-    _importsh__path_add PATH_LIST tmp/tests
-    _importsh__path_add PATH_LIST tmp/
+    varpath_prepend PATH_LIST tmp/
+    varpath_prepend PATH_LIST tmp/
+    varpath_prepend PATH_LIST tmp/tests
+    varpath_prepend PATH_LIST tmp/
 
     echo "$PATH_LIST"
     [[ "$PATH_LIST" == "tmp/tests:tmp/:val1:val2:val3" ]]
@@ -60,3 +60,36 @@ main() {
 }
 
 
+# Return current shell options
+shell_options ()
+{
+  local oldstate="$(shopt -po; shopt -p)"
+  if [[ -o errexit ]]; then
+    oldstate="$oldstate; set -e"
+  fi
+  echo "$oldstate"
+}
+
+
+@test "Test strict mode persistance: Off" {
+
+    local before=$(shell_options)
+    main
+    local after=$(shell_options)
+
+    echo "SHOW DIFF"
+    diff -u <(echo "${before}" ) <(echo "$after") || true
+    echo "END DIFF"
+
+    [[ "$before" == "$after" ]]
+}
+
+@test "Test strict mode persistance: On" {
+
+    set -euo pipefail
+    local before=$(shell_options)
+    main
+    local after=$(shell_options)
+
+    [[ "$before" == "$after" ]]
+}
