@@ -54,10 +54,17 @@ command -v yadm-3.1.0
 echo "yadm-3.1.0 version: $(yadm --version)"
 ```
 
+There are more demonstration in [tests/demos/](tests/demos/) directory:
+* `./tests/demos/demo_clish.sh -h`: Demonstration with [clish](https://github.com/mrjk/clish) library for blazing fast CLIs
+* More to come ...
+
 
 ## Quickstart
 
-Follow this walkthrough to quickly get started with `import.sh`.
+Follow this walkthrough to quickly get started with `import.sh`.  
+
+
+
 
 ### Initialization
 
