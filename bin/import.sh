@@ -72,10 +72,10 @@ varpath_prepend() {
   local var=$1
   local path=$2
 
-  # _importsh__logtrace "Prepend to $var: $path"
-  # if [[ ":${!var}:" != *":$path:"* ]]; then
-  if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
-    _importsh__logtrace "Add prepend to '$var': $path"
+  _importsh__logtrace "Prepend to $var: $path"
+  if [[ ":${!var}:" != *":$path:"* ]]; then
+  # if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+  #   _importsh__logtrace "Add prepend to '$var': $path"
     export "${var}=$path${!var:+":${!var}"}"
   fi
 }
@@ -89,10 +89,10 @@ varpath_append() {
   local var=$1
   local path=$2
 
-  # _importsh__logtrace "Append to $var: $path"
-  # if [[ ":${!var}:" != *":$path:"* ]]; then
-  if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
-    _importsh__logtrace "Add append to '$var': $path"
+  _importsh__logtrace "Append to $var: $path"
+  if [[ ":${!var}:" != *":$path:"* ]]; then
+  # if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+  #   _importsh__logtrace "Add append to '$var': $path"
     export "${var}=${!var:+"${!var}:"}$path"
   fi
 }
@@ -288,10 +288,11 @@ _importsh__init()
   varpath_append SHLIB_BIN_PATHS "$SHLIB_DIR_DOWNLOADS/$SHLIB_PATH_NEEDLE/bin"
 
   # Self register and init
-  export PATH
+  export SHLIB_BIN_PATHS_OLD=$PATH
   export SHLIB_FILE_MAP=
 
   _importsh__register_lib "$path"
+  export PATH=$SHLIB_BIN_PATHS:$PATH
 }
 
 
