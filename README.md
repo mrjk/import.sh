@@ -19,10 +19,9 @@ likely not be implemented in way to keep this piece of software simple.
 
 ## Installation
 
-Run the provided installed script:
+Run the provided installation script:
 ```
-# TODO
-curl -O - https:// ... | bash 
+curl -O - https://raw.githubusercontent.com/mrjk/import.sh/main/install.sh | bash 
 ```
 
 The script installed `import.sh` in the first writable path of the `$PATH` variable. If there is no available writable path, it will fail to install.
