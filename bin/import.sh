@@ -24,33 +24,6 @@
 # Libraries
 # =============================================================
 
-
-# Check if current script is sourced or executed
-# Source: https://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
-is_sourced() {
-  set -x
-  echo "$0"
-  echo "${BASH_SOURCE[0]}"
-  # (return 0 2>/dev/null) && sourced=1 || sourced=0
-  if [ -n "${ZSH_VERSION:-}" ]; then 
-      case $ZSH_EVAL_CONTEXT in *:file:*) return 0;; esac
-  else  # Add additional POSIX-compatible shell names here, if needed.
-      case ${0##*/} in dash|-dash|bash|-bash|ksh|-ksh|sh|-sh) return 0;; esac
-  fi
-  set +x
-  return 1  # NOT sourced.
-}
-
-# # Return current shell options
-# shell_options ()
-# {
-#   local oldstate="$(shopt -po; shopt -p)"
-#   if [[ -o errexit ]]; then
-#     oldstate="$oldstate; set -e"
-#   fi
-#   echo "$oldstate"
-# }
-
 # Portable realpath implementation in shell script
 # Usage:
 #  realpath [<PATH>]
@@ -261,22 +234,6 @@ _importsh__query_api ()
 }
 
 
-# # Restore shell options
-# _importsh__restore_shell ()
-# {
-#   local curr=$(shell_options)
-
-#   # echo "SHOW DIFF"
-#   # diff -u <(echo "${SHLIB_SHELL_OPTS}" ) <(echo "$curr") || true
-#   # echo "END DIFF"
-
-#   if [[ "$curr" != "$SHLIB_SHELL_OPTS" ]]; then
-#     _importsh__logtrace "Restore shell options: "
-#     eval "$SHLIB_SHELL_OPTS"
-#   fi
-# }
-
-
 # =============================================================
 # Internal libraries
 # =============================================================
@@ -299,18 +256,10 @@ _importsh__init()
   local root="${path%/*}${d:+/$d}"
 
   export SHLIB_TRACE=${SHLIB_TRACE:-0}
-
-  # local default_path_needle=
-  # if [[ "${SHLIB_AS_CLI:-false}" == "true" ]]; then
-  #   default_path_needle=${SHLIB_PATH_NEEDLE:-user-$(id -un)}
-  # else
-  #   default_path_needle=${SHLIB_PATH_NEEDLE:-$(cksum <<< "$path" | cut -f 1 -d ' ')}
-
-  # fi
-  # export SHLIB_PATH_NEEDLE=$default_path_needle
-  export SHLIB_PATH_NEEDLE=${SHLIB_PATH_NEEDLE:-$(cksum <<< "$path" | cut -f 1 -d ' ')}
+  export SHLIB_VERSION=0.0.1
 
   # Prepare user paths
+  export SHLIB_PATH_NEEDLE=${SHLIB_PATH_NEEDLE:-$(cksum <<< "$path" | cut -f 1 -d ' ')}
   export SHLIB_DIR_SHARED=${SHLIB_DIR_SHARED:-$HOME/.local/share/import.sh}
   local dl_path="/tmp"
   if [[ -d "$HOME/.local" ]]; then
@@ -342,9 +291,7 @@ _importsh__init()
   export PATH
   export SHLIB_FILE_MAP=
 
-  # _importsh__logtrace "Register itself: $path"
   _importsh__register_lib "$path"
-
 }
 
 
@@ -416,7 +363,6 @@ _importsh__import_api ()
     varpath_prepend SHLIB_FILE_MAP "$target=$full_path"
     return
   fi
-
 }
 
 
@@ -429,22 +375,30 @@ _importsh__import_api ()
 _importsh__usage ()
 {
   local app_name=${0##*/}
+  local lib_name="import"
+  
   cat <<EOF
-  $app_name simplistic shell resource loader
+  $app_name simplistic shell resource loader.
 
-Usage as CLI:
-  $app_name exec <TARGET> [ARGS]   Execute a binary target
-  $app_name enable                 Source code to enable in live session
-  $app_name show                   Get target file content
+Load as libaray:
+  source "$app_name"            Load import.sh library
 
 Usage as library:
-  $app_name get <TARGET>           Get target file path
-  $app_name read <TARGET>          Get target file content
-  $app_name info                   Show informations
+  $lib_name lib <TARGET> [<URL>]   Source a target shell library
+  $lib_name bin <TARGET> [<URL>]   Ensure a target is available in \$PATH
+  $lib_name file <TARGET> [<URL>]  Ensure a file is available
 
-  $app_name lib <TARGET> [<URL>]   Source a target
-  $app_name bin <TARGET> [<URL>]   Ensure a target is available in PATH
-  $app_name file <TARGET> [<URL>]  Ensure a path is available
+  $lib_name get <TARGET>           Get target file path
+  $lib_name read <TARGET>          Get target file content
+
+  $lib_name debug                  Show informations
+
+Example:
+#!/bin/bash
+source "$app_name"
+import bin https://raw.githubusercontent.com/TheLocehiliosan/yadm/3.2.2/yadm
+import bin yadm-3.1.0 https://raw.githubusercontent.com/TheLocehiliosan/yadm/3.1.0/yadm
+
 EOF
 }
 
@@ -471,7 +425,7 @@ import()
     read)
       cat "$(_importsh__query_api $@)"
       return ;;
-    info)
+    debug)
       # env|sort
       echo "SHLIB_LIB_PATHS:"
       echo "$SHLIB_LIB_PATHS" | tr ':' '\n' | sed 's/^/  - /'
@@ -515,102 +469,21 @@ import()
 
   # Do import
   _importsh__import_api "$kind" "$target" "$source_url" || return $?
-  # return $?
 }
 
-temp_enable ()
-{
-  cat <<EOF
-# Load import.sh in shell session
-# Usage:
-#  eval "\$( import.sh enable )"
-
-SHLIB_PATH_NEEDLE="user-$(id -un )"
-NEW_PATHS="\$(source ${0} && echo \$SHLIB_BIN_PATHS)"
-echo NEW_PATHS="\$(source ${0##*/} && echo \$SHLIB_BIN_PATHS)"
-echo NEW_PATHS=\$NEW_PATHS
-
-echo export PATH="\${NEW_PATHS}:\${PATH}"
-echo ">&2 echo 'INFO: import.sh is enabled in \\\$PATH'"
-EOF
-
-}
-
-
-# CLI wrapper
-_importsh__cli ()
-{
-  local cmd=${1:-help}
-  shift 1 || true
-  >&2 echo "INFO: Starting import.sh CLI"
-
-  # Init interactive session
-  # SHLIB_DIR_DOWNLOADS=
-  SHLIB_PATH_NEEDLE="user-$(id -un )"
-
-  SHLIB_AS_CLI=true
-  _importsh__init
-
-  local conf="$SHLIB_DIR_SHARED/interactive.conf"
-  SHLIB_FILE_MAP=$(cat "$conf" 2>/dev/null||true)
-
-  # Dispatch commands
-  case "$cmd" in
-    exec)
-      local target=$1
-      shift 1
-      exec "$(_importsh__query_api $target)" "$@"
-      return $? ;;
-    enable)
-      temp_enable $@
-
-      return ;;
-    show)
-      cat "${conf}" | tr ':' '\n'
-      return ;;
-    help|-h|--help)
-      _importsh__usage
-      return
-      ;;
-  esac
-
-  # Forward to import
-  import $cmd "$@"
-
-  # Save live session state
-  echo "$SHLIB_FILE_MAP" > "$SHLIB_DIR_SHARED/interactive.conf"
-}
 
 # =============================================================
 # Script loader
 # =============================================================
 
-# Prepare shell env
-# set -x
-# export SHLIB_SHELL_OPTS=$(shell_options)
-# set -euo pipefail
+# if [[ "${BASH_SOURCE[0]}" =~ .*"$0"$ ]]; then
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
+  >&2 printf "$0 is not meant to be called, but sourced in shell scripts. See help usage below:\n\n"
+  _importsh__usage
+  exit 1
 
-
-# (return 0 2>/dev/null) && sourced=1 || sourced=0
-# echo "Source status: $sourced (0==executed)"
-# # Broken
-# if is_sourced; then
-#   echo IS_SOURCED
-#   # _importsh__init $@
-# else
-#   echo IS_EXECUTED
-#   # _importsh__init
-#   # import $@
-# fi
-
-# set +x
-# Run import.sh
-
-
-# echo "$0"
-if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then
-  _importsh__cli "$@"
 else
   _importsh__init "$@"
 fi
+

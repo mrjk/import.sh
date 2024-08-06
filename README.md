@@ -12,7 +12,7 @@ portable as possible, while including external dependencies.
 It support both local assets, related to your project file or directory, and also remote
 assets when an URL is provided.
 
-Can be used in both script and interactive shell. Less than 200 lines of code, portable, multi OS and POSIX compliant. Installable with shctl.
+Less than 200 lines of code, portable, multi OS and POSIX compliant. Installable with shctl.
 
 `import.sh` is designed to work with single files instead of group of files. More features will
 likely not be implemented in way to keep this piece of software simple.
@@ -146,25 +146,6 @@ TODO
 
 #### Binaries
 TODO
-
-### Interactive shell (beta)
-
-
-Then you can install in your home folder any binaries, libraries or files:
-```bash
-# Install locally
-import.sh bin https://raw.githubusercontent.com/qzb/is.sh/v1.1.0/is.sh
-import.sh bin yadm-latest https://raw.githubusercontent.com/TheLocehiliosan/yadm/master/yadm
-
-# Run via exec command
-import.sh exec yadm-latest --version
-import.sh exec is.sh --version
-```
-
-To avoid prefixing  `import.sh exec` all binaries, you can enable directly in your shell:
-```bash
-source import.sh
-```
 
 
 # Documentation
