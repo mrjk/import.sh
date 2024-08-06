@@ -28,12 +28,16 @@
 # Check if current script is sourced or executed
 # Source: https://stackoverflow.com/questions/2683279/how-to-detect-if-a-script-is-being-sourced
 is_sourced() {
+  set -x
+  echo "$0"
+  echo "${BASH_SOURCE[0]}"
   # (return 0 2>/dev/null) && sourced=1 || sourced=0
   if [ -n "${ZSH_VERSION:-}" ]; then 
       case $ZSH_EVAL_CONTEXT in *:file:*) return 0;; esac
   else  # Add additional POSIX-compatible shell names here, if needed.
       case ${0##*/} in dash|-dash|bash|-bash|ksh|-ksh|sh|-sh) return 0;; esac
   fi
+  set +x
   return 1  # NOT sourced.
 }
 
@@ -95,11 +99,10 @@ varpath_prepend() {
   local var=$1
   local path=$2
 
-  _importsh__logtrace "Prepend to $var: $path"
-
-  # if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
-  if [[ ":${!var}:" != *":$path:"* ]]; then
-    # _importsh__logtrace "Add prepend to '$var': $path"
+  # _importsh__logtrace "Prepend to $var: $path"
+  # if [[ ":${!var}:" != *":$path:"* ]]; then
+  if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+    _importsh__logtrace "Add prepend to '$var': $path"
     export "${var}=$path${!var:+":${!var}"}"
   fi
 }
@@ -113,11 +116,10 @@ varpath_append() {
   local var=$1
   local path=$2
 
-  _importsh__logtrace "Append to $var: $path"
-
-  # if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
-  if [[ ":${!var}:" != *":$path:"* ]]; then
-    # _importsh__logtrace "Add append to '$var': $path"
+  # _importsh__logtrace "Append to $var: $path"
+  # if [[ ":${!var}:" != *":$path:"* ]]; then
+  if [ -d "$path" ] && [[ ":${!var}:" != *":$path:"* ]]; then
+    _importsh__logtrace "Add append to '$var': $path"
     export "${var}=${!var:+"${!var}:"}$path"
   fi
 }
@@ -143,7 +145,8 @@ varpath_find ()
       _importsh__logtrace "File lookup failed: $file"
     fi
   done <<<"$paths"
-  >&2 printf "%s\n" "WARN: Could not find file '$target' in "${!var_name}""
+  _importsh__logtrace "Could not find file '$target' in '\$${var_name}'"
+  # >&2 printf "%s\n" "WARN: Could not find file '$target' in "${var_name}""
   return 1
 }
 
@@ -237,23 +240,24 @@ _importsh__register_lib()
 # Retrieve path from name
 _importsh__query_api ()
 {
-  
   local name=$1
-  # echo $SHLIB_FILE_MAP
-  local match=$(grep -o ":$name=[^:]*:" <<< ":$SHLIB_FILE_MAP:")
 
+  if [[ -z "$SHLIB_FILE_MAP" ]]; then
+    >&2 printf "ERROR: Nothing loaded yet, please import '%s' first\n" "$name"
+    return 1
+  fi
+  
+  local match=$(grep -o ":$name=[^:]*:" <<< ":$SHLIB_FILE_MAP:")
   if [[ -z "$match" ]]; then
     >&2 printf "No candidates found for '%s'\n" "$name"
+
+    echo "$SHLIB_FILE_MAP" | tr ':' '\n'
     return 1
   fi
   match=${match#*=}
   match="${match::${#match}-1}"
 
-  # echo "$match"
   printf "%s\n" "$match"
-
-  # echo "REGISTER==== $1 $2"
-  # varpath_prepend SHLIB_FILE_MAP "$name=$path"
 }
 
 
@@ -295,15 +299,23 @@ _importsh__init()
   local root="${path%/*}${d:+/$d}"
 
   export SHLIB_TRACE=${SHLIB_TRACE:-0}
-  export SHLIB_LVL=${SHLIB_LVL:-0}${SHLIB_LVL:+$(( $SHLIB_LVL + 1 ))}
-  export SHLIB_PATH_NEEDLE=$(cksum <<< "$path" | cut -f 1 -d ' ')
+
+  # local default_path_needle=
+  # if [[ "${SHLIB_AS_CLI:-false}" == "true" ]]; then
+  #   default_path_needle=${SHLIB_PATH_NEEDLE:-user-$(id -un)}
+  # else
+  #   default_path_needle=${SHLIB_PATH_NEEDLE:-$(cksum <<< "$path" | cut -f 1 -d ' ')}
+
+  # fi
+  # export SHLIB_PATH_NEEDLE=$default_path_needle
+  export SHLIB_PATH_NEEDLE=${SHLIB_PATH_NEEDLE:-$(cksum <<< "$path" | cut -f 1 -d ' ')}
 
   # Prepare user paths
+  export SHLIB_DIR_SHARED=${SHLIB_DIR_SHARED:-$HOME/.local/share/import.sh}
   local dl_path="/tmp"
   if [[ -d "$HOME/.local" ]]; then
-    export dl_path="$HOME/.local/share/import.sh/downloads"
+    export dl_path="$SHLIB_DIR_SHARED/downloads"
   fi
-  export SHLIB_DIR_SHARED=${SHLIB_DIR_SHARED:-$HOME/.local/share/import.sh}
   export SHLIB_DIR_DOWNLOADS=${SHLIB_DIR_DOWNLOADS:-$dl_path}
 
   # Prepare lookup paths
@@ -312,24 +324,27 @@ _importsh__init()
   varpath_append SHLIB_LIB_PATHS "$root/libexec"
   varpath_append SHLIB_LIB_PATHS "$root"
   varpath_append SHLIB_LIB_PATHS "$SHLIB_DIR_SHARED/lib"
-  varpath_append SHLIB_LIB_PATHS "$SHLIB_DIR_DOWNLOADS/lib"
+  varpath_append SHLIB_LIB_PATHS "$SHLIB_DIR_DOWNLOADS/$SHLIB_PATH_NEEDLE/lib"
 
   export SHLIB_FILE_PATHS=
   varpath_append SHLIB_FILE_PATHS "$root/files"
   varpath_append SHLIB_FILE_PATHS "$root"
   varpath_append SHLIB_FILE_PATHS "$SHLIB_DIR_SHARED/files"
-  varpath_append SHLIB_FILE_PATHS "$SHLIB_DIR_DOWNLOADS/files"
+  varpath_append SHLIB_FILE_PATHS "$SHLIB_DIR_DOWNLOADS/$SHLIB_PATH_NEEDLE/files"
 
   export SHLIB_BIN_PATHS=
   varpath_append SHLIB_BIN_PATHS "$root/bin"
   varpath_append SHLIB_BIN_PATHS "$root"
   varpath_append SHLIB_BIN_PATHS "$SHLIB_DIR_SHARED/bin"
-  varpath_append SHLIB_BIN_PATHS "$SHLIB_DIR_DOWNLOADS/bin"
+  varpath_append SHLIB_BIN_PATHS "$SHLIB_DIR_DOWNLOADS/$SHLIB_PATH_NEEDLE/bin"
 
   # Self register and init
   export PATH
   export SHLIB_FILE_MAP=
+
+  # _importsh__logtrace "Register itself: $path"
   _importsh__register_lib "$path"
+
 }
 
 
@@ -383,7 +398,7 @@ _importsh__import_api ()
     local full_path=$(varpath_find "$kind_var" "$target")
 
     if [[ ! -f "$full_path" ]]; then
-      >&2 printf "No candidates found22 '%s' in: %s\n" "$target" "${SHLIB_LIB_PATHS//:/ }"
+      >&2 printf "ERROR: Can't find target '%s' in: %s\n" "$target" "${kind_var}"
       return 4
     fi
 
@@ -417,9 +432,15 @@ _importsh__usage ()
   cat <<EOF
   $app_name simplistic shell resource loader
 
-Usage:
+Usage as CLI:
+  $app_name exec <TARGET> [ARGS]   Execute a binary target
+  $app_name enable                 Source code to enable in live session
+  $app_name show                   Get target file content
+
+Usage as library:
   $app_name get <TARGET>           Get target file path
   $app_name read <TARGET>          Get target file content
+  $app_name info                   Show informations
 
   $app_name lib <TARGET> [<URL>]   Source a target
   $app_name bin <TARGET> [<URL>]   Ensure a target is available in PATH
@@ -449,6 +470,15 @@ import()
       return ;;
     read)
       cat "$(_importsh__query_api $@)"
+      return ;;
+    info)
+      # env|sort
+      echo "SHLIB_LIB_PATHS:"
+      echo "$SHLIB_LIB_PATHS" | tr ':' '\n' | sed 's/^/  - /'
+      echo "SHLIB_BIN_PATHS:"
+      echo "$SHLIB_BIN_PATHS" | tr ':' '\n' | sed 's/^/  - /'
+      echo "SHLIB_FILE_PATHS:"
+      echo "$SHLIB_FILE_PATHS" | tr ':' '\n' | sed 's/^/  - /'
       return ;;
     help|-h|--help)
       _importsh__usage
@@ -488,6 +518,68 @@ import()
   # return $?
 }
 
+temp_enable ()
+{
+  cat <<EOF
+# Load import.sh in shell session
+# Usage:
+#  eval "\$( import.sh enable )"
+
+SHLIB_PATH_NEEDLE="user-$(id -un )"
+NEW_PATHS="\$(source ${0} && echo \$SHLIB_BIN_PATHS)"
+echo NEW_PATHS="\$(source ${0##*/} && echo \$SHLIB_BIN_PATHS)"
+echo NEW_PATHS=\$NEW_PATHS
+
+echo export PATH="\${NEW_PATHS}:\${PATH}"
+echo ">&2 echo 'INFO: import.sh is enabled in \\\$PATH'"
+EOF
+
+}
+
+
+# CLI wrapper
+_importsh__cli ()
+{
+  local cmd=${1:-help}
+  shift 1 || true
+  >&2 echo "INFO: Starting import.sh CLI"
+
+  # Init interactive session
+  # SHLIB_DIR_DOWNLOADS=
+  SHLIB_PATH_NEEDLE="user-$(id -un )"
+
+  SHLIB_AS_CLI=true
+  _importsh__init
+
+  local conf="$SHLIB_DIR_SHARED/interactive.conf"
+  SHLIB_FILE_MAP=$(cat "$conf" 2>/dev/null||true)
+
+  # Dispatch commands
+  case "$cmd" in
+    exec)
+      local target=$1
+      shift 1
+      exec "$(_importsh__query_api $target)" "$@"
+      return $? ;;
+    enable)
+      temp_enable $@
+
+      return ;;
+    show)
+      cat "${conf}" | tr ':' '\n'
+      return ;;
+    help|-h|--help)
+      _importsh__usage
+      return
+      ;;
+  esac
+
+  # Forward to import
+  import $cmd "$@"
+
+  # Save live session state
+  echo "$SHLIB_FILE_MAP" > "$SHLIB_DIR_SHARED/interactive.conf"
+}
 
 # =============================================================
 # Script loader
@@ -498,15 +590,27 @@ import()
 # export SHLIB_SHELL_OPTS=$(shell_options)
 # set -euo pipefail
 
+
+
+# (return 0 2>/dev/null) && sourced=1 || sourced=0
+# echo "Source status: $sourced (0==executed)"
+# # Broken
+# if is_sourced; then
+#   echo IS_SOURCED
+#   # _importsh__init $@
+# else
+#   echo IS_EXECUTED
+#   # _importsh__init
+#   # import $@
+# fi
+
 # set +x
 # Run import.sh
-_importsh__init $@
 
-# Broken
-# if is_sourced; then
-#   _importsh__init $@
-# else
-#   echo AS_EXECTUED
-#   _importsh__init
-#   import $@
-# fi
+
+# echo "$0"
+if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then
+  _importsh__cli "$@"
+else
+  _importsh__init "$@"
+fi

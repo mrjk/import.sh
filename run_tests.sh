@@ -4,8 +4,9 @@ set -eu
 
 cd tests/
 
-./import.sh.bats
-
-./use_cases_import.sh.bats
+for i in *.bats; do
+  echo "INFO: Run test $i"
+  bats "$i"
+done
 
 echo SUCCESS
