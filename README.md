@@ -10,7 +10,8 @@ portable as possible, while including external dependencies.
 * Load file: Will ensure the file is available and provide it's full path
 
 It support both local assets, related to your project file or directory, and also remote
-assets when an URL is provided.
+assets when an URL is provided. When import.sh need to fetch an asset from an external URL,
+it will download it one time and put it in a cache directory (in `$HOME/.local/share/import.sh` or `/tmp`).
 
 Less than 200 lines of code, portable, multi OS and POSIX compliant. Installable with shctl.
 
@@ -21,7 +22,7 @@ likely not be implemented in way to keep this piece of software simple.
 
 Run the provided installation script:
 ```
-curl -O - https://raw.githubusercontent.com/mrjk/import.sh/main/install.sh | bash 
+curl -O - https://raw.githubusercontent.com/mrjk/import.sh/main/install.sh | bash
 ```
 
 The script installed `import.sh` in the first writable path of the `$PATH` variable. If there is no available writable path, it will fail to install.
@@ -50,7 +51,7 @@ command -v yadm
 echo "yadm version: $(yadm --version)"
 
 # Test yadm-3.1.0 binary
-command -v yadm-3.1.0 
+command -v yadm-3.1.0
 echo "yadm-3.1.0 version: $(yadm --version)"
 ```
 
@@ -61,40 +62,18 @@ There are more demonstration in [tests/demos/](tests/demos/) directory:
 
 ## Quickstart
 
-Follow this walkthrough to quickly get started with `import.sh`.  
+Follow this walkthrough to quickly get started with `import.sh`. 
 
 
 
 
 ### Initialization
 
-When `import.sh` is correctly installed, it should be available in your `$PATH`. So we can directly load the library wihtout knowing it's full path. In it's simplest form, it takes:
+When `import.sh` is correctly installed, it should be available in your `$PATH`. So we can directly load the library without knowing it's full path. In it's simplest form, it takes:
 ```bash
 source import.sh
 ```
 
-If `import.sh` is not installed, you can throw an instruction message:
-```bash
-command -v import.sh >&/dev/null || {
-  >&2 echo "Can't find import.sh, please install it first: curl -sfL https://raw.githubusercontent.com/mrjk/import.sh/master/install.sh | bash"
-  exit 1
-}
-
-# Import import.sh
-source import.sh 
-```
-
-Or even directly install `import.sh` without asking user consent:
-```bash
-# Ensure import.sh is always installed
-command -v import.sh >&/dev/null || {
-  curl -sfL https://raw.githubusercontent.com/mrjk/import.sh/master/install.sh 
-    | bash || exit $?
-  }
-
-# Import import.sh
-source import.sh
-```
 
 ### Debugging
 
@@ -104,9 +83,20 @@ SHLIB_TRACE=1 ./myscript.sh
 ```
 
 
-### Import remote assets
+## Import remote assets
 
-#### Libraries
+
+When import.sh need to fetch external resources, it will store cache in `$HOME/.local/share/import.sh` or `/tmp`, depending if directories are writable or not. It fails if it can't find a place to store files.
+
+   Note: TODO, store in ram as last case
+
+
+### Libraries
+
+#### Locally
+TODO
+
+#### Remotely
 
 To import and source a remote library:
 ```bash
@@ -120,7 +110,23 @@ import lib lib-prj1.sh https://raw.githubusercontent.com/user/project1/v0.0.9/ma
 import lib lib-prj2.sh https://raw.githubusercontent.com/user/project2/v17.2.0/main_lib.sh
 ```
 
-#### Binaries
+### Binaries
+
+
+#### Locally
+
+Prefered way of importing local binary is by path, for example one `bin` and one `libexec`:
+```bash
+# Import bin in PATH
+import.sh bin bin
+
+# Import subdirectory in PATH
+import.sh bin helper/tool/bin
+```
+
+  Note: Use the `import.sh bin script1 helper/tool/bin/script1` does not make sense and it is not tested.
+
+#### Remotely
 
 Import `import.sh` in your local scripts, then the command will be during script runtime:
 ```bash
@@ -128,13 +134,18 @@ import bin https://raw.githubusercontent.com/qzb/is.sh/v1.1.0/is.sh
 command -v is.sh
 ```
 
-It is possible to define the target file:
+It's possible to define the target file:
 ```bash
 import bin is-1.0.1.sh https://raw.githubusercontent.com/qzb/is.sh/v1.0.1/is.sh
 command -v is-1.0.1.sh
 ```
 
-#### Files
+### Files
+
+
+#### Locally
+
+#### Remotely
 
 To fetch external files:
 ```bash
@@ -145,25 +156,43 @@ echo "File repo for aria2: $(import get repo_aria2)"
 echo "Repo for desk: $(import read repo_desk)"
 ```
 
-### Import local assets
-
-#### Libraries
-TODO
-
-#### Binaries
-TODO
-
-
 # Documentation
+
+Advanced documentation for import.sh
 
 ## Bash strict mode
 
 `import.sh` support [strict mode](http://redsymbol.net/articles/unofficial-bash-strict-mode/).
 
-## Location downloads
-TODO
+
+## Auto install
+
+If `import.sh` is not installed, you can throw an instruction message:
+```bash
+command -v import.sh >&/dev/null || {
+  >&2 echo "Can't find import.sh, please install it first: curl -sfL https://raw.githubusercontent.com/mrjk/import.sh/master/install.sh | bash"
+  exit 1
+}
+
+# Import import.sh
+source import.sh
+```
+
+Or even directly install `import.sh` without asking user consent:
+```bash
+# Ensure import.sh is always installed
+command -v import.sh >&/dev/null || {
+  curl -sfL https://raw.githubusercontent.com/mrjk/import.sh/master/install.sh
+    | bash || exit $?
+  }
+
+# Import import.sh
+source import.sh
+```
 
 ## Use in your multi file project:
+
+There is an example:
 ```
 # In any binaries, you can mention the relative
 # lookup path
