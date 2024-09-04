@@ -3,7 +3,7 @@
 
 setup() {
     echo Setup phase
-    importsh_script_file="../bin/import.sh"
+    importsh_script_file="../import.sh"
     mkdir -p tmp/tests
 }
 

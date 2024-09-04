@@ -4,7 +4,7 @@
 setup() {
     echo Setup phase
 
-    script_file="../bin/import.sh"
+    script_file="../import.sh"
     # export dst_tarball="${BATS_TMPDIR}/dst.tar.gz"
     # export src_dir="${BATS_TMPDIR}/src_dir"
 
